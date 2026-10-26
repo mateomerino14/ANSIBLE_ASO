@@ -1,0 +1,56 @@
+---
+- name: Dejar el servidor destino limpio
+  hosts: servidor
+  gather_facts: false
+  vars_prompt:
+    - name: confirmar
+      prompt: "Se borraran todos los servicios del destino. Escribe si para continuar"
+      private: false
+  tasks:
+    - name: Cancelar si no se confirmo
+      ansible.builtin.meta: end_play
+      when: confirmar != 'si'
+
+    - name: Detener servicios
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+      loop: [apache2, mariadb, postgresql, smb, nmb, vsftpd]
+      failed_when: false
+
+    - name: Desinstalar paquetes
+      community.general.zypper:
+        name: [phpMyAdmin*, apache2*, php8*, mariadb, mariadb-client, postgresql*, samba, samba-client, vsftpd]
+        state: absent
+        clean_deps: true
+
+    - name: Borrar datos y configuraciones
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/mysql
+        - /var/lib/pgsql/data
+        - /etc/my.cnf.d/aso.cnf
+        - /etc/php8/conf.d/aso.ini
+        - /srv/www/htdocs/index.php
+        - /etc/samba/smb.conf
+        - /srv/samba
+        - /etc/vsftpd.conf
+
+    - name: Borrar usuarios
+      ansible.builtin.user:
+        name: "{{ item }}"
+        state: absent
+        remove: true
+      loop: ["{{ ftp_user }}", "{{ samba_user }}"]
+
+    - name: Cerrar firewall
+      ansible.posix.firewalld:
+        service: "{{ item }}"
+        permanent: true
+        immediate: true
+        state: disabled
+      loop: [http, mysql, postgresql, samba, ftp]
+      failed_when: false
