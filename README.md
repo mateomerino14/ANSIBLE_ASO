@@ -11,6 +11,8 @@ Repositorio: https://github.com/mateomerino14/ANSIBLE_ASO
 | VM 01 | Master (Ansible) | 192.168.1.203 |
 | VM 02 | Destino (clon de openSUSE 16.0 con MAC nueva) | 192.168.1.204 |
 
+Ambas máquinas deben estar en la misma red, y el destino necesita acceso a internet para descargar los paquetes con `zypper`.
+
 ## Estructura
 
 ```
@@ -75,12 +77,16 @@ cd ANSIBLE_ASO
 
 ### 3. Clave del vault
 
-La clave no se sube al repositorio. Se guarda en el archivo `.vault_pass`, que está en `.gitignore`:
+La clave del vault no se publica en el repositorio. Se encuentra en el archivo `README.txt` de la entrega (sección Credenciales) y en el archivo `.vault_pass` incluido en el zip.
+
+Al clonar el repositorio, se crea el archivo `.vault_pass` reemplazando `CLAVE` por la clave indicada en el `README.txt` de la entrega:
 
 ```bash
-echo 'CLAVE_DEL_VAULT' > .vault_pass
+echo 'CLAVE' > .vault_pass
 chmod 600 .vault_pass
 ```
+
+El archivo `.vault_pass` está en `.gitignore`, por lo que nunca se sube al repositorio.
 
 Para ver o editar las contraseñas:
 
@@ -94,6 +100,14 @@ ansible-vault edit group_vars/all/vault.yml
 ```bash
 ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
 ssh-copy-id root@192.168.1.204
+```
+
+`ssh-copy-id` pide la contraseña de root del destino una sola vez. Después, la conexión ya no la necesita.
+
+Opcional: una vez copiada la llave, se puede volver a bloquear el acceso de root con contraseña. La llave sigue funcionando:
+
+```bash
+ssh root@192.168.1.204 "rm /etc/ssh/sshd_config.d/10-root.conf && systemctl restart sshd"
 ```
 
 Si el destino tiene otra IP, se cambia en el archivo `hosts`. Si la red no es `192.168.1.x`, se cambian `red_local` y `mariadb_red` en `group_vars/all/vars.yml`.
@@ -124,7 +138,9 @@ ansible-playbook site.yml --tags samba
 ansible-playbook site.yml --tags ftp
 ```
 
-Al terminar se muestra el tiempo de cada tarea. Una segunda ejecución debe terminar con `changed=0`, porque todo ya está configurado.
+La primera ejecución tarda aproximadamente **3 a 4 minutos** en instalar los servicios, y alrededor de **7 minutos** el proceso completo. El tiempo depende de la velocidad de internet del destino, porque descarga los paquetes. Al terminar se muestra el tiempo de cada tarea.
+
+Una segunda ejecución tarda mucho menos y termina con `changed=0`, porque no reinstala nada.
 
 Si aparece el error `couldn't resolve module`, se instalan las colecciones:
 
@@ -132,7 +148,18 @@ Si aparece el error `couldn't resolve module`, se instalan las colecciones:
 ansible-galaxy collection install ansible.posix community.general
 ```
 
-### 7. Verificar
+### 7. Probar en el navegador
+
+Al terminar `site.yml`, desde cualquier equipo de la misma red:
+
+| Dirección | Qué muestra |
+|---|---|
+| `http://192.168.1.204/` | Página de prueba: confirma PHP, las extensiones `mysqli` (MariaDB) y `pgsql` (PostgreSQL), y la información de `phpinfo()` |
+| `http://192.168.1.204/phpMyAdmin/` | phpMyAdmin. Ingresar con `aso_user` o `root` |
+
+Si el destino tiene otra IP, se reemplaza `192.168.1.204` por la IP del destino (`192.168.1.x`). La ruta de phpMyAdmin distingue mayúsculas: `/phpMyAdmin/`.
+
+### 8. Verificar los servicios
 
 Estado de los servicios:
 
@@ -157,7 +184,7 @@ SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid();
 
 Debe devolver `t`. Una conexión sin SSL es rechazada.
 
-### 8. Volver a probar desde cero
+### 9. Volver a probar desde cero
 
 ```bash
 ansible-playbook reset.yml
@@ -165,6 +192,15 @@ ansible-playbook site.yml
 ```
 
 `reset.yml` pide escribir `si` antes de borrar los servicios del destino.
+
+## Solución de problemas
+
+| Mensaje | Causa | Solución |
+|---|---|---|
+| `PackageKit is blocking zypper` | El actualizador automático está usando `zypper` | `systemctl stop packagekit; systemctl mask packagekit` |
+| `UNREACHABLE` en `ansible all -m ping` | No hay conexión SSH con el destino | Revisar la IP en `hosts`, que `sshd` esté activo en el destino y que se haya ejecutado `ssh-copy-id` |
+| `couldn't resolve module` | Faltan colecciones de Ansible | `ansible-galaxy collection install ansible.posix community.general` |
+| `Attempting to decrypt but no vault secrets found` | Falta el archivo `.vault_pass` | Crear `.vault_pass` con la clave del vault (paso 3) |
 
 ## Características del proyecto
 
