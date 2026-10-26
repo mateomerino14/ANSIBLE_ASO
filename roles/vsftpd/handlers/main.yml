@@ -1,0 +1,5 @@
+---
+- name: Reiniciar vsftpd
+  ansible.builtin.systemd:
+    name: vsftpd
+    state: restarted
