@@ -1,0 +1,17 @@
+---
+red_local: 192.168.1.0/24
+mariadb_red: "192.168.1.%"
+
+ftp_user: user01
+
+samba_user: sambauser
+samba_group: sambashare
+samba_dir: /srv/samba/compartido
+samba_create_mask: "0664"
+samba_directory_mask: "2775"
+
+mariadb_db: aso_db
+mariadb_user: aso_user
+
+pg_user: aso_pg
+pg_db: aso_pgdb

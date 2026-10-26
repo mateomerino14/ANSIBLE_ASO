@@ -1,0 +1,63 @@
+---
+- name: Instalar Apache, PHP y phpMyAdmin
+  community.general.zypper:
+    name:
+      - apache2
+      - apache2-mod_php8
+      - php8
+      - php8-mysql
+      - php8-mbstring
+      - phpMyAdmin
+      - phpMyAdmin-apache
+    state: present
+
+- name: Activar PHP en Apache
+  ansible.builtin.shell: a2enmod -q php8 || { a2enmod php8 && echo cambiado; }
+  register: mod_php
+  changed_when: "'cambiado' in mod_php.stdout"
+  notify: Reiniciar apache
+
+- name: Activar phpMyAdmin en Apache
+  ansible.builtin.shell: grep -q 'phpMyAdmin' /etc/sysconfig/apache2 || { a2enflag phpMyAdmin && echo cambiado; }
+  register: flag_pma
+  changed_when: "'cambiado' in flag_pma.stdout"
+  notify: Reiniciar apache
+
+- name: PHP usa el socket de MariaDB
+  ansible.builtin.copy:
+    dest: /etc/php8/conf.d/aso.ini
+    content: |
+      date.timezone = America/La_Paz
+      mysqli.default_socket = /run/mysql/mysql.sock
+    mode: "0644"
+  notify: Reiniciar apache
+
+- name: Pagina de prueba
+  ansible.builtin.copy:
+    dest: /srv/www/htdocs/index.php
+    content: |
+      <h1>LAMP desplegado con Ansible</h1>
+      <p>MariaDB (mysqli): <?php echo extension_loaded('mysqli') ? 'OK' : 'NO'; ?></p>
+      <p>PostgreSQL (pgsql): <?php echo extension_loaded('pgsql') ? 'OK' : 'NO'; ?></p>
+      <p><a href="/phpMyAdmin/">phpMyAdmin</a></p>
+      <?php phpinfo(); ?>
+    mode: "0644"
+
+- name: Apache activo
+  ansible.builtin.systemd:
+    name: apache2
+    state: started
+    enabled: true
+
+- name: Abrir HTTP en firewall
+  ansible.posix.firewalld:
+    service: http
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: SELinux - permitir a Apache conectarse a las bases de datos
+  ansible.builtin.shell: getsebool httpd_can_network_connect_db | grep -q 'on$' || { setsebool -P httpd_can_network_connect_db on && echo cambiado; }
+  register: sel
+  changed_when: "'cambiado' in sel.stdout"
+  failed_when: false
