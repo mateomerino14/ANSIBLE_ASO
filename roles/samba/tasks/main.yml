@@ -1,0 +1,58 @@
+---
+- name: Instalar Samba
+  community.general.zypper:
+    name: [samba, samba-client]
+    state: present
+
+- name: Crear grupo
+  ansible.builtin.group:
+    name: "{{ samba_group }}"
+
+- name: Crear usuario del sistema
+  ansible.builtin.user:
+    name: "{{ samba_user }}"
+    groups: "{{ samba_group }}"
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Crear directorio compartido
+  ansible.builtin.file:
+    path: "{{ samba_dir }}"
+    state: directory
+    group: "{{ samba_group }}"
+    mode: "{{ samba_directory_mask }}"
+
+- name: Configuracion smb.conf
+  ansible.builtin.template:
+    src: smb.conf.j2
+    dest: /etc/samba/smb.conf
+    mode: "0644"
+  notify: Reiniciar samba
+
+- name: Crear usuario Samba
+  ansible.builtin.shell: >
+    pdbedit -L -u {{ samba_user }} >/dev/null 2>&1
+    || { (echo '{{ samba_password }}'; echo '{{ samba_password }}') | smbpasswd -s -a {{ samba_user }} && echo cambiado; }
+  register: smb_user
+  changed_when: "'cambiado' in smb_user.stdout"
+  no_log: true
+
+- name: Samba activo
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop: [smb, nmb]
+
+- name: Abrir Samba en firewall
+  ansible.posix.firewalld:
+    service: samba
+    permanent: true
+    immediate: true
+    state: enabled
+
+- name: SELinux - permitir compartir carpetas
+  ansible.builtin.shell: getsebool samba_export_all_rw | grep -q 'on$' || { setsebool -P samba_export_all_rw on && echo cambiado; }
+  register: sel
+  changed_when: "'cambiado' in sel.stdout"
+  failed_when: false
