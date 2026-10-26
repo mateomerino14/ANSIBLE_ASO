@@ -1,0 +1,15 @@
+[global]
+   workgroup = WORKGROUP
+   security = user
+   map to guest = Never
+   server min protocol = SMB2
+   load printers = no
+
+[compartido]
+   path = {{ samba_dir }}
+   valid users = @{{ samba_group }}
+   force group = {{ samba_group }}
+   read only = no
+   browseable = yes
+   create mask = {{ samba_create_mask }}
+   directory mask = {{ samba_directory_mask }}
