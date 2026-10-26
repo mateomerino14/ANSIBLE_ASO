@@ -1,0 +1,52 @@
+---
+- name: Instalar MariaDB
+  community.general.zypper:
+    name: [mariadb, mariadb-client]
+    state: present
+
+- name: Configuracion de MariaDB
+  ansible.builtin.template:
+    src: my.cnf.j2
+    dest: /etc/my.cnf.d/aso.cnf
+    mode: "0644"
+  notify: Reiniciar mariadb
+
+- name: MariaDB activo
+  ansible.builtin.systemd:
+    name: mariadb
+    state: started
+    enabled: true
+
+- name: Aplicar configuracion antes de continuar
+  ansible.builtin.meta: flush_handlers
+
+- name: Seguridad basica (quitar usuarios anonimos y base test)
+  ansible.builtin.command: >
+    mysql -e "DELETE FROM mysql.global_priv WHERE User='';
+    DROP DATABASE IF EXISTS test; FLUSH PRIVILEGES;"
+  changed_when: false
+
+- name: Contrasena de root
+  ansible.builtin.command: >
+    mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED VIA unix_socket
+    OR mysql_native_password USING PASSWORD('{{ mariadb_root_password }}');"
+  changed_when: false
+  no_log: true
+
+- name: Crear base de datos y usuario
+  ansible.builtin.command: >
+    mysql -e "CREATE DATABASE IF NOT EXISTS {{ mariadb_db }};
+    CREATE USER IF NOT EXISTS '{{ mariadb_user }}'@'localhost' IDENTIFIED BY '{{ mariadb_user_password }}';
+    CREATE USER IF NOT EXISTS '{{ mariadb_user }}'@'{{ mariadb_red }}' IDENTIFIED BY '{{ mariadb_user_password }}';
+    GRANT ALL ON {{ mariadb_db }}.* TO '{{ mariadb_user }}'@'localhost';
+    GRANT ALL ON {{ mariadb_db }}.* TO '{{ mariadb_user }}'@'{{ mariadb_red }}';
+    FLUSH PRIVILEGES;"
+  changed_when: false
+  no_log: true
+
+- name: Abrir MariaDB en firewall
+  ansible.posix.firewalld:
+    service: mysql
+    permanent: true
+    immediate: true
+    state: enabled
