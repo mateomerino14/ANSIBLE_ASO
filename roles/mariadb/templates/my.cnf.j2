@@ -1,0 +1,11 @@
+[mysqld]
+bind-address = 0.0.0.0
+port = 3306
+socket = /run/mysql/mysql.sock
+character-set-server = utf8mb4
+collation-server = utf8mb4_general_ci
+max_connections = 100
+skip-name-resolve
+
+[client]
+socket = /run/mysql/mysql.sock

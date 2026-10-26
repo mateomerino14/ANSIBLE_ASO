@@ -1,0 +1,53 @@
+---
+- name: Instalar vsftpd
+  community.general.zypper:
+    name: vsftpd
+    state: present
+
+- name: Crear usuario FTP
+  ansible.builtin.user:
+    name: "{{ ftp_user }}"
+    create_home: true
+  register: usuario_ftp
+
+- name: Contrasena del usuario FTP (solo al crearlo)
+  ansible.builtin.shell: echo '{{ ftp_user }}:{{ ftp_password }}' | chpasswd
+  when: usuario_ftp.changed
+  changed_when: true
+  no_log: true
+
+- name: Carpeta segura que vsftpd necesita
+  ansible.builtin.file:
+    path: /usr/share/empty
+    state: directory
+    mode: "0755"
+
+- name: Configuracion vsftpd.conf
+  ansible.builtin.template:
+    src: vsftpd.conf.j2
+    dest: /etc/vsftpd.conf
+    mode: "0644"
+  notify: Reiniciar vsftpd
+
+- name: Servicio vsftpd activo
+  ansible.builtin.systemd:
+    name: vsftpd
+    state: started
+    enabled: true
+
+- name: Abrir FTP y puertos pasivos en firewall
+  ansible.posix.firewalld:
+    service: "{{ item.service | default(omit) }}"
+    port: "{{ item.port | default(omit) }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop:
+    - { service: ftp }
+    - { port: 30000-30100/tcp }
+
+- name: SELinux - permitir FTP
+  ansible.builtin.shell: getsebool ftpd_full_access | grep -q 'on$' || { setsebool -P ftpd_full_access on && echo cambiado; }
+  register: sel
+  changed_when: "'cambiado' in sel.stdout"
+  failed_when: false

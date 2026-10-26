@@ -1,0 +1,17 @@
+---
+- name: Desplegar LAMP, PostgreSQL, Samba y FTP en openSUSE 16
+  hosts: servidor
+  gather_facts: false
+  pre_tasks:
+    - name: Detener PackageKit (bloquea zypper)
+      ansible.builtin.systemd:
+        name: packagekit
+        state: stopped
+        masked: true
+      failed_when: false
+  roles:
+    - { role: apache, tags: apache }
+    - { role: mariadb, tags: mariadb }
+    - { role: postgresql, tags: postgresql }
+    - { role: samba, tags: samba }
+    - { role: vsftpd, tags: ftp }

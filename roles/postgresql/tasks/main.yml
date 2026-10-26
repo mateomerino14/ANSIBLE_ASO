@@ -1,0 +1,83 @@
+---
+- name: Instalar PostgreSQL y libreria de conexion PHP
+  community.general.zypper:
+    name: [postgresql-server, postgresql, php8-pgsql]
+    state: present
+  notify: Reiniciar apache (pgsql)
+
+# En openSUSE el primer arranque crea la base de datos inicial
+- name: Arrancar PostgreSQL
+  ansible.builtin.systemd:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: Certificado SSL para conexiones cifradas
+  ansible.builtin.command: >
+    runuser -u postgres -- openssl req -x509 -nodes -newkey rsa:2048 -days 365
+    -subj "/CN={{ inventory_hostname }}"
+    -keyout /var/lib/pgsql/data/server.key -out /var/lib/pgsql/data/server.crt
+  args:
+    creates: /var/lib/pgsql/data/server.crt
+    chdir: /tmp
+
+- name: Permisos de la llave SSL
+  ansible.builtin.file:
+    path: /var/lib/pgsql/data/server.key
+    mode: "0600"
+
+- name: Escuchar conexiones remotas y activar SSL
+  ansible.builtin.lineinfile:
+    path: /var/lib/pgsql/data/postgresql.conf
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: "^#?listen_addresses", line: "listen_addresses = '*'" }
+    - { regexp: "^#?ssl =", line: "ssl = on" }
+  notify: Reiniciar postgresql
+
+- name: Reglas de acceso (pg_hba.conf)
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: /var/lib/pgsql/data/pg_hba.conf
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  notify: Reiniciar postgresql
+
+- name: Aplicar configuracion antes de continuar
+  ansible.builtin.meta: flush_handlers
+
+- name: Contrasena del usuario postgres
+  ansible.builtin.command: >
+    runuser -u postgres -- psql -c "ALTER USER postgres PASSWORD '{{ pg_postgres_password }}';"
+  args:
+    chdir: /tmp
+  changed_when: false
+  no_log: true
+
+- name: Crear usuario nuevo
+  ansible.builtin.shell: >
+    runuser -u postgres -- psql -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ pg_user }}'" | grep -q 1
+    || { runuser -u postgres -- psql -c "CREATE ROLE {{ pg_user }} LOGIN PASSWORD '{{ pg_user_password }}';" && echo cambiado; }
+  args:
+    chdir: /tmp
+  register: pg_new_user
+  changed_when: "'cambiado' in pg_new_user.stdout"
+  no_log: true
+
+- name: Crear base de datos del usuario
+  ansible.builtin.shell: >
+    runuser -u postgres -- psql -tc "SELECT 1 FROM pg_database WHERE datname='{{ pg_db }}'" | grep -q 1
+    || { runuser -u postgres -- createdb -O {{ pg_user }} {{ pg_db }} && echo cambiado; }
+  args:
+    chdir: /tmp
+  register: pg_new_db
+  changed_when: "'cambiado' in pg_new_db.stdout"
+
+- name: Abrir PostgreSQL en firewall
+  ansible.posix.firewalld:
+    service: postgresql
+    permanent: true
+    immediate: true
+    state: enabled
