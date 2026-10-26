@@ -1,0 +1,11 @@
+---
+- name: Reiniciar postgresql
+  ansible.builtin.systemd:
+    name: postgresql
+    state: restarted
+
+- name: Reiniciar apache (pgsql)
+  ansible.builtin.systemd:
+    name: apache2
+    state: restarted
+  failed_when: false

@@ -1,0 +1,7 @@
+# TIPO     BASE   USUARIO    DIRECCION          METODO
+local      all    postgres                      peer
+local      all    all                           scram-sha-256
+host       all    all        127.0.0.1/32       scram-sha-256
+# Remoto: solo con SSL (cifrado)
+hostssl    all    all        {{ red_local }}    scram-sha-256
+hostnossl  all    all        0.0.0.0/0          reject
